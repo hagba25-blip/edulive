@@ -55,3 +55,12 @@ def get_session(session_id: str, user: dict = Depends(get_current_user)):
     if not res.data:
         raise HTTPException(status_code=404, detail="Session introuvable")
     return res.data
+
+
+@router.get("/{session_id}/chat")
+def get_chat_history(session_id: str, user: dict = Depends(get_current_user)):
+    """Historique des messages de chat déjà envoyés dans cette session."""
+    res = supabase.table("chat_messages").select("*").eq("session_id", session_id).eq(
+        "is_private", False
+    ).order("created_at").execute()
+    return res.data
