@@ -18,6 +18,8 @@ class ConnectionManager:
     async def connect(self, session_id: str, user_id: str, websocket: WebSocket):
         await websocket.accept()
         self.rooms.setdefault(session_id, {})
+        existing_participants = list(self.rooms[session_id].keys())  # avant d'ajouter le nouvel arrivant
+
         self.rooms[session_id][user_id] = websocket
         self.whiteboard_state.setdefault(session_id, [])
 
@@ -25,6 +27,12 @@ class ConnectionManager:
         await websocket.send_json({
             "type": "whiteboard_sync",
             "strokes": self.whiteboard_state[session_id],
+        })
+
+        # Envoie la liste des participants déjà présents au nouvel arrivant
+        await websocket.send_json({
+            "type": "participants_sync",
+            "participants": existing_participants,
         })
 
         # Prévient les autres qu'un nouveau participant est arrivé
