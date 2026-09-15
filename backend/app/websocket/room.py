@@ -65,6 +65,14 @@ async def room_websocket(websocket: WebSocket, session_id: str, token: str = Que
                 manager.clear_whiteboard(session_id)
                 await manager.broadcast(session_id, {"type": "whiteboard_clear"}, exclude=user_id)
 
+            elif msg_type == "whiteboard_erase":
+                element_id = data.get("id")
+                manager.erase_element(session_id, element_id)
+                await manager.broadcast(session_id, {
+                    "type": "whiteboard_erase",
+                    "id": element_id,
+                }, exclude=user_id)
+
             # ---------- CHAT ----------
             elif msg_type == "chat_message":
                 content = data.get("content", "")

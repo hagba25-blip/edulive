@@ -72,6 +72,11 @@ class ConnectionManager:
     def clear_whiteboard(self, session_id: str):
         self.whiteboard_state[session_id] = []
 
+    def erase_element(self, session_id: str, element_id: str):
+        """Retire un seul élément (trait/texte/forme) de l'historique, sans tout effacer."""
+        strokes = self.whiteboard_state.get(session_id, [])
+        self.whiteboard_state[session_id] = [s for s in strokes if s.get("id") != element_id]
+
     def participants(self, session_id: str) -> List[str]:
         return list(self.rooms.get(session_id, {}).keys())
 
