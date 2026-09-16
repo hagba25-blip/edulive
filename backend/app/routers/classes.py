@@ -69,3 +69,16 @@ def list_students(class_id: str, teacher: dict = Depends(require_teacher)):
         return []
     res = supabase.table("users").select("id, full_name, email, avatar_url").in_("id", student_ids).execute()
     return res.data
+
+
+@router.delete("/{class_id}/students/{student_id}")
+def remove_student(class_id: str, student_id: str, teacher: dict = Depends(require_teacher)):
+    """Retire (exclut) un élève d'une classe. Réservé à l'enseignant propriétaire de la classe."""
+    cls = supabase.table("classes").select("teacher_id").eq("id", class_id).execute()
+    if not cls.data:
+        raise HTTPException(status_code=404, detail="Classe introuvable")
+    if cls.data[0]["teacher_id"] != teacher["id"]:
+        raise HTTPException(status_code=403, detail="Cette classe ne vous appartient pas")
+
+    supabase.table("class_members").delete().eq("class_id", class_id).eq("student_id", student_id).execute()
+    return {"message": "Élève retiré de la classe"}
