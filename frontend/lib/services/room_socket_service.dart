@@ -12,15 +12,16 @@ class RoomSocketService {
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
 
   void connect(String sessionId) {
-    final uri = Uri.parse('$kWsBaseUrl/ws/room/$sessionId?token=${ApiService.token}');
+    final encodedToken = Uri.encodeQueryComponent(ApiService.token ?? '');
+    final uri = Uri.parse('$kWsBaseUrl/ws/room/$sessionId?token=$encodedToken');
     _channel = WebSocketChannel.connect(uri);
     _channel!.stream.listen(
       (raw) {
         final data = jsonDecode(raw) as Map<String, dynamic>;
         _messageController.add(data);
       },
-      onError: (e) => _messageController.addError(e),
-      onDone: () => print('WebSocket fermé'),
+      onError: (e) => print('Erreur WebSocket: $e'),
+      onDone: () => print('WebSocket fermé, code: ${_channel?.closeCode}, raison: ${_channel?.closeReason}'),
     );
   }
 
@@ -35,6 +36,11 @@ class RoomSocketService {
 
   void clearWhiteboard() {
     _send({'type': 'whiteboard_clear'});
+  }
+
+  /// Efface un élément précis du tableau (trait, texte ou forme), sans tout effacer.
+  void eraseElement(String elementId) {
+    _send({'type': 'whiteboard_erase', 'id': elementId});
   }
 
   // ---------- CHAT ----------

@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Adresse du backend FastAPI. À adapter selon l'environnement
-/// (émulateur Android: 10.0.2.2, appareil réel: IP locale, prod: domaine HTTPS).
-const String kApiBaseUrl = 'http://10.0.2.2:8000';
-const String kWsBaseUrl = 'ws://10.0.2.2:8000';
+/// Adresse du backend FastAPI déployé sur Render.
+/// Pour revenir en local plus tard (émulateur Android), remplace par :
+/// http://10.0.2.2:8000 et ws://10.0.2.2:8000
+const String kApiBaseUrl = 'https://edulive-yeac.onrender.com';
+const String kWsBaseUrl = 'wss://edulive-yeac.onrender.com';
 
 class ApiService {
   static String? _token;
@@ -87,7 +88,37 @@ class ApiService {
     return _handle(res);
   }
 
+  static Future<List<dynamic>> classStudents(String classId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/classes/$classId/students'), headers: _headers);
+    return _handle(res) as List<dynamic>;
+  }
+
+  static Future<void> removeStudent(String classId, String studentId) async {
+    final res = await http.delete(Uri.parse('$kApiBaseUrl/classes/$classId/students/$studentId'), headers: _headers);
+    _handle(res);
+  }
+
   // ---------- SESSIONS LIVE ----------
+  static Future<List<dynamic>> chatHistory(String sessionId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/sessions/$sessionId/chat'), headers: _headers);
+    return _handle(res) as List<dynamic>;
+  }
+
+  // ---------- UTILISATEURS (cache de noms pour le chat/participants) ----------
+  static final Map<String, String> _nameCache = {};
+
+  static Future<String> getUserName(String userId) async {
+    if (_nameCache.containsKey(userId)) return _nameCache[userId]!;
+    try {
+      final res = await http.get(Uri.parse('$kApiBaseUrl/users/$userId'), headers: _headers);
+      final data = _handle(res);
+      final name = data['full_name'] ?? userId.substring(0, 8);
+      _nameCache[userId] = name;
+      return name;
+    } catch (_) {
+      return userId.substring(0, 8);
+    }
+  }
   static Future<Map<String, dynamic>> createSession(String classId, String title) async {
     final res = await http.post(
       Uri.parse('$kApiBaseUrl/sessions/'),
@@ -102,8 +133,56 @@ class ApiService {
     return _handle(res);
   }
 
+  static Future<Map<String, dynamic>> endSession(String sessionId) async {
+    final res = await http.post(Uri.parse('$kApiBaseUrl/sessions/$sessionId/end'), headers: _headers);
+    return _handle(res);
+  }
+
   static Future<List<dynamic>> sessionsForClass(String classId) async {
     final res = await http.get(Uri.parse('$kApiBaseUrl/sessions/class/$classId'), headers: _headers);
+    return _handle(res) as List<dynamic>;
+  }
+
+  // ---------- EXERCICES ----------
+  static Future<List<dynamic>> exercisesForClass(String classId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/exercises/class/$classId'), headers: _headers);
+    return _handle(res) as List<dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> createExercise({
+    required String classId,
+    required String title,
+    required String type, // qcm | open | true_false
+    required String question,
+    List<String>? options,
+    String? correctAnswer,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$kApiBaseUrl/exercises/'),
+      headers: _headers,
+      body: jsonEncode({
+        'class_id': classId,
+        'title': title,
+        'type': type,
+        'question': question,
+        'options': options,
+        'correct_answer': correctAnswer,
+      }),
+    );
+    return _handle(res);
+  }
+
+  static Future<Map<String, dynamic>> submitAnswer(String exerciseId, String answer) async {
+    final res = await http.post(
+      Uri.parse('$kApiBaseUrl/exercises/submit'),
+      headers: _headers,
+      body: jsonEncode({'exercise_id': exerciseId, 'answer': answer}),
+    );
+    return _handle(res);
+  }
+
+  static Future<List<dynamic>> exerciseResults(String exerciseId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/exercises/$exerciseId/results'), headers: _headers);
     return _handle(res) as List<dynamic>;
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../services/room_socket_service.dart';
 
 class ParticipantsWidget extends StatefulWidget {
@@ -14,8 +15,20 @@ class ParticipantsWidgetState extends State<ParticipantsWidget> {
   final Set<String> _participants = {};
   final Set<String> _handsRaised = {};
   final Set<String> _micEnabled = {};
+  final Map<String, String> _names = {};
 
-  void addParticipant(String id) => setState(() => _participants.add(id));
+  void _resolveName(String id) {
+    if (_names.containsKey(id)) return;
+    _names[id] = id.substring(0, 8); // placeholder immédiat pendant le chargement
+    ApiService.getUserName(id).then((name) {
+      if (mounted) setState(() => _names[id] = name);
+    });
+  }
+
+  void addParticipant(String id) => setState(() {
+        _participants.add(id);
+        _resolveName(id);
+      });
   void removeParticipant(String id) => setState(() {
         _participants.remove(id);
         _handsRaised.remove(id);
@@ -42,7 +55,7 @@ class ParticipantsWidgetState extends State<ParticipantsWidget> {
         final micOn = _micEnabled.contains(id);
         return ListTile(
           leading: const CircleAvatar(child: Icon(Icons.person)),
-          title: Text(id.substring(0, 8)), // à remplacer par le nom réel via lookup users
+          title: Text(_names[id] ?? id.substring(0, 8)),
           trailing: Wrap(
             spacing: 4,
             children: [

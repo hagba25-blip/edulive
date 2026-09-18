@@ -26,15 +26,16 @@ class WebRTCPeerConnection {
     ]
   };
 
-  Future<void> init({bool video = false}) async {
+  Future<void> init({bool video = false, MediaStream? localStream}) async {
     _pc = await createPeerConnection(_config);
 
-    localStream = await navigator.mediaDevices.getUserMedia({
+    localStream ??= await navigator.mediaDevices.getUserMedia({
       'audio': true,
       'video': video,
     });
-    for (final track in localStream!.getTracks()) {
-      await _pc!.addTrack(track, localStream!);
+    this.localStream = localStream;
+    for (final track in localStream.getTracks()) {
+      await _pc!.addTrack(track, localStream);
     }
 
     _pc!.onIceCandidate = (candidate) {
@@ -79,7 +80,8 @@ class WebRTCPeerConnection {
   }
 
   Future<void> dispose() async {
-    await localStream?.dispose();
+    // Le flux micro est partagé entre toutes les connexions de la salle
+    // (géré et libéré par ClassroomScreen) — on ne le ferme pas ici.
     await _pc?.close();
   }
 }

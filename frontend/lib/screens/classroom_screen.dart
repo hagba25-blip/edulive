@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models/models.dart';
+import '../services/api_service.dart';
 import '../services/room_socket_service.dart';
+import '../services/webrtc_service.dart';
 import '../widgets/whiteboard_widget.dart';
 import '../widgets/chat_widget.dart';
 import '../widgets/participants_widget.dart';
@@ -21,8 +24,9 @@ class ClassroomScreen extends StatefulWidget {
   State<ClassroomScreen> createState() => _ClassroomScreenState();
 }
 
-class _ClassroomScreenState extends State<ClassroomScreen> {
+class _ClassroomScreenState extends State<ClassroomScreen> with SingleTickerProviderStateMixin {
   late RoomSocketService _socket;
+  late TabController _sideTabController; // pour la vue bureau (Participants | Chat)
   final _whiteboardKey = GlobalKey<WhiteboardWidgetState>();
   final _chatKey = GlobalKey<ChatWidgetState>();
   final _participantsKey = GlobalKey<ParticipantsWidgetState>();
@@ -30,43 +34,127 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
   bool _micOn = false;
   bool _handRaised = false;
   int _tabIndex = 0; // pour la disposition en onglets sur mobile
+  int _unreadChat = 0;
+  int _unreadParticipants = 0;
+
+  MediaStream? _localStream;
+  final Map<String, WebRTCPeerConnection> _peers = {};
 
   @override
   void initState() {
     super.initState();
+    _sideTabController = TabController(length: 2, vsync: this);
+    _sideTabController.addListener(() {
+      if (_sideTabController.indexIsChanging) return;
+      setState(() {
+        if (_sideTabController.index == 0) {
+          _unreadParticipants = 0;
+        } else {
+          _unreadChat = 0;
+        }
+      });
+    });
     _socket = RoomSocketService();
     _socket.connect(widget.sessionId);
     _socket.messages.listen(_onMessage);
+    _loadChatHistory();
+    _initLocalMedia();
+  }
+
+  /// Crée le flux micro local une seule fois (partagé avec toutes les connexions WebRTC).
+  /// L'enseignant démarre avec le micro activé, l'élève démarre coupé.
+  Future<void> _initLocalMedia() async {
+    try {
+      final stream = await navigator.mediaDevices.getUserMedia({'audio': true, 'video': false});
+      final micOn = widget.user.isTeacher;
+      for (final track in stream.getAudioTracks()) {
+        track.enabled = micOn;
+      }
+      setState(() {
+        _localStream = stream;
+        _micOn = micOn;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Impossible d'accéder au micro: $e")),
+        );
+      }
+    }
+  }
+
+  /// Établit (ou récupère) la connexion WebRTC avec un participant donné.
+  /// [initiator] = true si c'est nous qui envoyons l'offre (cas: on vient de rejoindre
+  /// et on découvre des participants déjà présents).
+  Future<WebRTCPeerConnection> _ensurePeer(String peerId, {required bool initiator}) async {
+    final existing = _peers[peerId];
+    if (existing != null) return existing;
+
+    final pc = WebRTCPeerConnection(peerId: peerId, socket: _socket);
+    _peers[peerId] = pc;
+    await pc.init(localStream: _localStream);
+    if (initiator) {
+      await pc.createOffer();
+    }
+    return pc;
+  }
+
+  void _removePeer(String peerId) {
+    _peers.remove(peerId)?.dispose();
+  }
+
+  Future<void> _loadChatHistory() async {
+    try {
+      final history = await ApiService.chatHistory(widget.sessionId);
+      _chatKey.currentState?.receiveHistory(history);
+    } catch (_) {
+      // Pas grave si l'historique ne charge pas, le direct continuera de fonctionner.
+    }
   }
 
   void _onMessage(Map<String, dynamic> data) {
     switch (data['type']) {
       case 'whiteboard_sync':
-        final strokes = (data['strokes'] as List).map((s) => Stroke.fromJson(s)).toList();
-        _whiteboardKey.currentState?.receiveSync(strokes);
+        final elements = (data['strokes'] as List).map((s) => BoardElement.fromJson(s)).toList();
+        _whiteboardKey.currentState?.receiveSync(elements);
         break;
       case 'whiteboard_draw':
-        _whiteboardKey.currentState?.receiveStroke(Stroke.fromJson(data['stroke']));
+        _whiteboardKey.currentState?.receiveElement(BoardElement.fromJson(data['stroke']));
         break;
       case 'whiteboard_clear':
         _whiteboardKey.currentState?.clearAll();
+        break;
+      case 'whiteboard_erase':
+        _whiteboardKey.currentState?.receiveErase(data['id']);
         break;
       case 'chat_message':
         if (data['sender_id'] != widget.user.id) {
           _chatKey.currentState?.receiveMessage(
             ChatMessage(senderId: data['sender_id'], content: data['content']),
           );
+          if (!_isChatVisible()) setState(() => _unreadChat++);
+        }
+        break;
+      case 'participants_sync':
+        final ids = (data['participants'] as List).cast<String>();
+        for (final id in ids) {
+          _participantsKey.currentState?.addParticipant(id);
+          _ensurePeer(id, initiator: true); // on vient d'arriver: c'est nous qui appelons
         }
         break;
       case 'participant_joined':
         _participantsKey.currentState?.addParticipant(data['user_id']);
+        if (!_isParticipantsVisible()) setState(() => _unreadParticipants++);
+        // On ne fait rien côté WebRTC ici: le nouvel arrivant va lui-même nous envoyer une offre.
         break;
       case 'participant_left':
         _participantsKey.currentState?.removeParticipant(data['user_id']);
+        _removePeer(data['user_id']);
         break;
       case 'hand_raised':
         _participantsKey.currentState?.setHandRaised(data['user_id']);
         if (data['user_id'] != widget.user.id) {
+          if (!_isParticipantsVisible()) setState(() => _unreadParticipants++);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('✋ ${data['user_id'].substring(0, 6)} demande la parole')),
           );
@@ -77,13 +165,56 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
         break;
       case 'mic_granted':
         setState(() => _micOn = true);
+        _localStream?.getAudioTracks().forEach((t) => t.enabled = true);
         break;
       case 'mic_revoked':
         setState(() => _micOn = false);
+        _localStream?.getAudioTracks().forEach((t) => t.enabled = false);
         break;
-      // 'webrtc_offer' / 'webrtc_answer' / 'webrtc_ice_candidate' seraient
-      // routés ici vers WebRTCPeerConnection pour établir l'audio/vidéo.
+      case 'webrtc_offer':
+        _ensurePeer(data['from'], initiator: false).then((pc) => pc.handleRemoteOffer(data['sdp']));
+        break;
+      case 'webrtc_answer':
+        _peers[data['from']]?.handleRemoteAnswer(data['sdp']);
+        break;
+      case 'webrtc_ice_candidate':
+        _peers[data['from']]?.addRemoteIceCandidate(data['candidate']);
+        break;
     }
+  }
+
+  Future<void> _confirmAndLeave(bool isTeacher) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(isTeacher ? 'Terminer le cours ?' : 'Quitter le cours ?'),
+        content: Text(
+          isTeacher
+              ? 'Cela mettra fin au cours en direct pour tous les participants.'
+              : 'Tu peux revenir rejoindre le cours tant que l\'enseignant ne l\'a pas terminé.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Annuler')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(isTeacher ? 'Terminer' : 'Quitter'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    if (isTeacher) {
+      try {
+        await ApiService.endSession(widget.sessionId);
+      } catch (_) {
+        // Même si l'appel échoue (ex: réseau), on laisse quand même l'enseignant sortir.
+      }
+    }
+
+    if (mounted) Navigator.pop(context);
   }
 
   void _toggleHand() {
@@ -91,9 +222,30 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
     if (_handRaised) _socket.raiseHand();
   }
 
+  /// true si l'onglet Chat est actuellement visible (bureau ou mobile).
+  bool _isChatVisible() {
+    final isWide = _lastIsWide;
+    if (isWide) return _sideTabController.index == 1;
+    return _tabIndex == 2;
+  }
+
+  /// true si l'onglet Participants est actuellement visible (bureau ou mobile).
+  bool _isParticipantsVisible() {
+    final isWide = _lastIsWide;
+    if (isWide) return _sideTabController.index == 0;
+    return _tabIndex == 1;
+  }
+
+  bool _lastIsWide = false;
+
   @override
   void dispose() {
     _socket.dispose();
+    for (final pc in _peers.values) {
+      pc.dispose();
+    }
+    _localStream?.dispose();
+    _sideTabController.dispose();
     super.dispose();
   }
 
@@ -125,6 +277,7 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final isWide = constraints.maxWidth > 800;
+          _lastIsWide = isWide;
           if (isWide) {
             // Disposition bureau: tableau blanc à gauche, participants + chat à droite
             return Row(
@@ -135,12 +288,29 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
                   width: 300,
                   child: Column(
                     children: [
-                      const TabBar(tabs: [Tab(text: 'Participants'), Tab(text: 'Chat')]),
+                      TabBar(
+                        controller: _sideTabController,
+                        tabs: [
+                          Tab(
+                            icon: Badge(
+                              label: Text('$_unreadParticipants'),
+                              isLabelVisible: _unreadParticipants > 0,
+                              child: const Icon(Icons.people),
+                            ),
+                            text: 'Participants',
+                          ),
+                          Tab(
+                            icon: Badge(
+                              label: Text('$_unreadChat'),
+                              isLabelVisible: _unreadChat > 0,
+                              child: const Icon(Icons.chat),
+                            ),
+                            text: 'Chat',
+                          ),
+                        ],
+                      ),
                       Expanded(
-                        child: DefaultTabController(
-                          length: 2,
-                          child: TabBarView(children: [tabs[1], tabs[2]]),
-                        ),
+                        child: TabBarView(controller: _sideTabController, children: [tabs[1], tabs[2]]),
                       ),
                     ],
                   ),
@@ -148,8 +318,10 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
               ],
             );
           }
-          // Disposition mobile: onglets Tableau | Participants | Chat
-          return tabs[_tabIndex];
+          // Disposition mobile: onglets Tableau | Participants | Chat.
+          // IndexedStack garde les 3 widgets vivants en mémoire (au lieu de les
+          // détruire/recréer), pour ne pas perdre le tableau/chat en changeant d'onglet.
+          return IndexedStack(index: _tabIndex, children: tabs);
         },
       ),
       bottomNavigationBar: MediaQuery.of(context).size.width > 800
@@ -160,11 +332,29 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
                 _controlBar(isTeacher),
                 NavigationBar(
                   selectedIndex: _tabIndex,
-                  onDestinationSelected: (i) => setState(() => _tabIndex = i),
-                  destinations: const [
-                    NavigationDestination(icon: Icon(Icons.draw), label: 'Tableau'),
-                    NavigationDestination(icon: Icon(Icons.people), label: 'Participants'),
-                    NavigationDestination(icon: Icon(Icons.chat), label: 'Chat'),
+                  onDestinationSelected: (i) => setState(() {
+                    _tabIndex = i;
+                    if (i == 1) _unreadParticipants = 0;
+                    if (i == 2) _unreadChat = 0;
+                  }),
+                  destinations: [
+                    const NavigationDestination(icon: Icon(Icons.draw), label: 'Tableau'),
+                    NavigationDestination(
+                      icon: Badge(
+                        label: Text('$_unreadParticipants'),
+                        isLabelVisible: _unreadParticipants > 0,
+                        child: const Icon(Icons.people),
+                      ),
+                      label: 'Participants',
+                    ),
+                    NavigationDestination(
+                      icon: Badge(
+                        label: Text('$_unreadChat'),
+                        isLabelVisible: _unreadChat > 0,
+                        child: const Icon(Icons.chat),
+                      ),
+                      label: 'Chat',
+                    ),
                   ],
                 ),
               ],
@@ -181,7 +371,12 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
         children: [
           IconButton(
             icon: Icon(_micOn ? Icons.mic : Icons.mic_off, color: Colors.white),
-            onPressed: isTeacher ? () => setState(() => _micOn = !_micOn) : null,
+            onPressed: isTeacher
+                ? () {
+                    setState(() => _micOn = !_micOn);
+                    _localStream?.getAudioTracks().forEach((t) => t.enabled = _micOn);
+                  }
+                : null,
           ),
           if (!isTeacher)
             IconButton(
@@ -196,7 +391,7 @@ class _ClassroomScreenState extends State<ClassroomScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.call_end, color: Colors.red),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => _confirmAndLeave(isTeacher),
           ),
         ],
       ),
