@@ -34,6 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
           : await ApiService.login(_emailCtrl.text.trim(), _passCtrl.text);
 
       await ApiService.saveToken(result['access_token']);
+      await ApiService.saveUserData(result['user']);
       final user = User.fromJson(result['user']);
 
       if (!mounted) return;

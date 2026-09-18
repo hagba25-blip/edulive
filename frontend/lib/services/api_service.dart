@@ -22,10 +22,25 @@ class ApiService {
     await prefs.setString('access_token', token);
   }
 
+  static Future<void> saveUserData(Map<String, dynamic> user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('saved_user', jsonEncode(user));
+  }
+
+  /// Récupère l'utilisateur sauvegardé localement (pour rouvrir directement
+  /// sur le tableau de bord sans repasser par l'écran de connexion).
+  static Future<Map<String, dynamic>?> getSavedUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('saved_user');
+    if (raw == null) return null;
+    return jsonDecode(raw) as Map<String, dynamic>;
+  }
+
   static Future<void> clearToken() async {
     _token = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('access_token');
+    await prefs.remove('saved_user');
   }
 
   static String? get token => _token;

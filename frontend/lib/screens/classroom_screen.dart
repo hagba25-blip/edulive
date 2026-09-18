@@ -54,11 +54,21 @@ class _ClassroomScreenState extends State<ClassroomScreen> with SingleTickerProv
         }
       });
     });
-    _socket = RoomSocketService();
+    _socket = RoomSocketService(); // créé tout de suite (widgets en ont besoin dès le build),
+    // mais la connexion réelle n'est lancée qu'après que le micro soit prêt (voir _bootstrap).
+    _bootstrap();
+  }
+
+  /// Attend que le flux micro soit complètement prêt AVANT de se connecter à la salle.
+  /// Important: si on se connecte trop tôt, les connexions WebRTC entrantes/sortantes
+  /// peuvent redemander l'accès au micro en parallèle de _initLocalMedia(), ce qui
+  /// provoque un conflit d'accès matériel sur certains téléphones Android (l'audio
+  /// ne part alors jamais, alors que ça passe sans souci sur navigateur web).
+  Future<void> _bootstrap() async {
+    await _initLocalMedia();
     _socket.connect(widget.sessionId);
     _socket.messages.listen(_onMessage);
     _loadChatHistory();
-    _initLocalMedia();
   }
 
   /// Crée le flux micro local une seule fois (partagé avec toutes les connexions WebRTC).

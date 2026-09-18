@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import 'login_screen.dart';
 import 'classroom_screen.dart';
 import 'exercises_screen.dart';
 import 'class_students_screen.dart';
@@ -122,7 +123,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await ApiService.clearToken();
-              if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (route) => false,
+                );
+              }
             },
           ),
         ],
