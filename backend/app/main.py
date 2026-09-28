@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, classes, sessions, exercises, users
+from app.routers import auth, classes, sessions, exercises, users, payments, notifications
 from app.websocket import room
 
 app = FastAPI(title="EduLive API", version="1.0.0")
@@ -19,6 +19,8 @@ app.include_router(classes.router)
 app.include_router(sessions.router)
 app.include_router(exercises.router)
 app.include_router(users.router)
+app.include_router(payments.router)
+app.include_router(notifications.router)
 app.include_router(room.router)  # expose /ws/room/{session_id}
 
 

@@ -39,6 +39,12 @@ class TokenOut(BaseModel):
 class ClassCreate(BaseModel):
     name: str
     subject: str
+    description: Optional[str] = None
+    is_private: bool = False
+    is_paid: bool = False
+    price: float = 0
+    currency: str = "XOF"
+    payout_phone: Optional[str] = None  # numéro mobile money de l'enseignant (avec code pays, ex: +228...)
 
 
 class ClassOut(BaseModel):
@@ -47,6 +53,14 @@ class ClassOut(BaseModel):
     subject: str
     teacher_id: str
     invite_code: str
+    is_paid: bool = False
+    price: float = 0
+    currency: str = "XOF"
+
+
+class ClassMessageCreate(BaseModel):
+    content: str
+    is_private: bool = False  # False = mur public (visible à tous), True = seulement pour le créateur
 
 
 class JoinClass(BaseModel):
@@ -93,3 +107,27 @@ class ChatMessageIn(BaseModel):
     content: str
     is_private: bool = False
     recipient_id: Optional[str] = None
+
+
+# ---------- PAIEMENTS ----------
+
+class CheckoutCreate(BaseModel):
+    class_id: str
+
+
+class CheckoutOut(BaseModel):
+    checkout_url: str
+    payment_id: str
+
+
+class WithdrawalMethod(str, Enum):
+    mobile_money = "mobile_money"
+    card = "card"
+
+
+class WithdrawalCreate(BaseModel):
+    method: WithdrawalMethod
+    amount: float
+    phone: Optional[str] = None       # requis si method == mobile_money
+    card_info: Optional[str] = None   # requis si method == card (ex: 4 derniers chiffres, ou token)
+    

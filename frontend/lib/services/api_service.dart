@@ -2,9 +2,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Adresse du backend FastAPI déployé sur Render.
-/// Pour revenir en local plus tard (émulateur Android), remplace par :
-/// http://10.0.2.2:8000 et ws://10.0.2.2:8000
 const String kApiBaseUrl = 'https://edulive-yeac.onrender.com';
 const String kWsBaseUrl = 'wss://edulive-yeac.onrender.com';
 
@@ -27,8 +24,6 @@ class ApiService {
     await prefs.setString('saved_user', jsonEncode(user));
   }
 
-  /// Récupère l'utilisateur sauvegardé localement (pour rouvrir directement
-  /// sur le tableau de bord sans repasser par l'écran de connexion).
   static Future<Map<String, dynamic>?> getSavedUserData() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('saved_user');
@@ -85,11 +80,40 @@ class ApiService {
     return _handle(res) as List<dynamic>;
   }
 
-  static Future<Map<String, dynamic>> createClass(String name, String subject) async {
+  /// Toutes les classes publiques (tous enseignants), affichées sur l'écran d'accueil.
+  static Future<List<dynamic>> publicClasses() async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/classes/public'), headers: _headers);
+    return _handle(res) as List<dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> classInfo(String classId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/classes/$classId/info'), headers: _headers);
+    return _handle(res);
+  }
+
+  static Future<Map<String, dynamic>> createClass(
+    String name,
+    String subject, {
+    String? description,
+    bool isPrivate = false,
+    bool isPaid = false,
+    double price = 0,
+    String currency = 'XOF',
+    String? payoutPhone,
+  }) async {
     final res = await http.post(
       Uri.parse('$kApiBaseUrl/classes/'),
       headers: _headers,
-      body: jsonEncode({'name': name, 'subject': subject}),
+      body: jsonEncode({
+        'name': name,
+        'subject': subject,
+        'description': description,
+        'is_private': isPrivate,
+        'is_paid': isPaid,
+        'price': price,
+        'currency': currency,
+        'payout_phone': payoutPhone,
+      }),
     );
     return _handle(res);
   }
@@ -113,27 +137,53 @@ class ApiService {
     _handle(res);
   }
 
-  // ---------- SESSIONS LIVE ----------
-  static Future<List<dynamic>> chatHistory(String sessionId) async {
-    final res = await http.get(Uri.parse('$kApiBaseUrl/sessions/$sessionId/chat'), headers: _headers);
+  static Future<Map<String, dynamic>> classRevenue(String classId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/classes/$classId/revenue'), headers: _headers);
+    return _handle(res);
+  }
+
+  // ---------- MUR DE MESSAGES D'UNE CLASSE ----------
+  static Future<List<dynamic>> classMessages(String classId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/classes/$classId/messages'), headers: _headers);
     return _handle(res) as List<dynamic>;
   }
 
-  // ---------- UTILISATEURS (cache de noms pour le chat/participants) ----------
-  static final Map<String, String> _nameCache = {};
-
-  static Future<String> getUserName(String userId) async {
-    if (_nameCache.containsKey(userId)) return _nameCache[userId]!;
-    try {
-      final res = await http.get(Uri.parse('$kApiBaseUrl/users/$userId'), headers: _headers);
-      final data = _handle(res);
-      final name = data['full_name'] ?? userId.substring(0, 8);
-      _nameCache[userId] = name;
-      return name;
-    } catch (_) {
-      return userId.substring(0, 8);
-    }
+  static Future<Map<String, dynamic>> postClassMessage(
+    String classId,
+    String content, {
+    bool isPrivate = false,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$kApiBaseUrl/classes/$classId/messages'),
+      headers: _headers,
+      body: jsonEncode({'content': content, 'is_private': isPrivate}),
+    );
+    return _handle(res);
   }
+
+  // ---------- PROGRAMMER / RAPPELS ----------
+  static Future<void> setReminder(String classId) async {
+    final res = await http.post(Uri.parse('$kApiBaseUrl/classes/$classId/remind'), headers: _headers);
+    _handle(res);
+  }
+
+  static Future<void> removeReminder(String classId) async {
+    final res = await http.delete(Uri.parse('$kApiBaseUrl/classes/$classId/remind'), headers: _headers);
+    _handle(res);
+  }
+
+  // ---------- NOTIFICATIONS ----------
+  static Future<List<dynamic>> myNotifications() async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/notifications/mine'), headers: _headers);
+    return _handle(res) as List<dynamic>;
+  }
+
+  static Future<void> markAllNotificationsRead() async {
+    final res = await http.post(Uri.parse('$kApiBaseUrl/notifications/read-all'), headers: _headers);
+    _handle(res);
+  }
+
+  // ---------- SESSIONS LIVE ----------
   static Future<Map<String, dynamic>> createSession(String classId, String title) async {
     final res = await http.post(
       Uri.parse('$kApiBaseUrl/sessions/'),
@@ -158,6 +208,27 @@ class ApiService {
     return _handle(res) as List<dynamic>;
   }
 
+  static Future<List<dynamic>> chatHistory(String sessionId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/sessions/$sessionId/chat'), headers: _headers);
+    return _handle(res) as List<dynamic>;
+  }
+
+  // ---------- UTILISATEURS (cache de noms pour le chat/participants) ----------
+  static final Map<String, String> _nameCache = {};
+
+  static Future<String> getUserName(String userId) async {
+    if (_nameCache.containsKey(userId)) return _nameCache[userId]!;
+    try {
+      final res = await http.get(Uri.parse('$kApiBaseUrl/users/$userId'), headers: _headers);
+      final data = _handle(res);
+      final name = data['full_name'] ?? userId.substring(0, 8);
+      _nameCache[userId] = name;
+      return name;
+    } catch (_) {
+      return userId.substring(0, 8);
+    }
+  }
+
   // ---------- EXERCICES ----------
   static Future<List<dynamic>> exercisesForClass(String classId) async {
     final res = await http.get(Uri.parse('$kApiBaseUrl/exercises/class/$classId'), headers: _headers);
@@ -167,7 +238,7 @@ class ApiService {
   static Future<Map<String, dynamic>> createExercise({
     required String classId,
     required String title,
-    required String type, // qcm | open | true_false
+    required String type,
     required String question,
     List<String>? options,
     String? correctAnswer,
@@ -198,6 +269,50 @@ class ApiService {
 
   static Future<List<dynamic>> exerciseResults(String exerciseId) async {
     final res = await http.get(Uri.parse('$kApiBaseUrl/exercises/$exerciseId/results'), headers: _headers);
+    return _handle(res) as List<dynamic>;
+  }
+
+  // ---------- PAIEMENTS (LeekPay) ----------
+  static Future<Map<String, dynamic>> createCheckout(String classId) async {
+    final res = await http.post(
+      Uri.parse('$kApiBaseUrl/payments/checkout'),
+      headers: _headers,
+      body: jsonEncode({'class_id': classId}),
+    );
+    return _handle(res);
+  }
+
+  static Future<Map<String, dynamic>> paymentStatus(String paymentId) async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/payments/$paymentId/status'), headers: _headers);
+    return _handle(res);
+  }
+
+  static Future<Map<String, dynamic>> getWallet() async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/payments/wallet'), headers: _headers);
+    return _handle(res);
+  }
+
+  static Future<Map<String, dynamic>> requestWithdrawal({
+    required String method, // mobile_money | card
+    required double amount,
+    String? phone,
+    String? cardInfo,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$kApiBaseUrl/payments/withdraw'),
+      headers: _headers,
+      body: jsonEncode({
+        'method': method,
+        'amount': amount,
+        'phone': phone,
+        'card_info': cardInfo,
+      }),
+    );
+    return _handle(res);
+  }
+
+  static Future<List<dynamic>> myWithdrawals() async {
+    final res = await http.get(Uri.parse('$kApiBaseUrl/payments/withdrawals'), headers: _headers);
     return _handle(res) as List<dynamic>;
   }
 

@@ -31,7 +31,6 @@ def submit_answer(payload: ExerciseSubmit, student: dict = Depends(get_current_u
     is_correct = None
     score = None
 
-    # Correction automatique pour QCM et Vrai/Faux
     if exercise["type"] in ("qcm", "true_false") and exercise.get("correct_answer"):
         is_correct = payload.answer.strip().lower() == exercise["correct_answer"].strip().lower()
         score = 1.0 if is_correct else 0.0
@@ -49,7 +48,6 @@ def submit_answer(payload: ExerciseSubmit, student: dict = Depends(get_current_u
 
 @router.get("/{exercise_id}/results")
 def get_results(exercise_id: str, teacher: dict = Depends(require_teacher)):
-    """Suivi des résultats/progression des élèves pour un exercice donné."""
     res = supabase.table("exercise_submissions").select(
         "*, users:student_id(full_name, email)"
     ).eq("exercise_id", exercise_id).execute()

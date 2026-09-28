@@ -30,6 +30,14 @@ class SchoolClass {
   final String subject;
   final String teacherId;
   final String inviteCode;
+  final bool isPaid;
+  final double price;
+  final String currency;
+  final bool isPrivate;
+  final String? description;
+  final String? teacherName;
+  final bool isLive;
+  final int memberCount;
 
   SchoolClass({
     required this.id,
@@ -37,6 +45,14 @@ class SchoolClass {
     required this.subject,
     required this.teacherId,
     required this.inviteCode,
+    this.isPaid = false,
+    this.price = 0,
+    this.currency = 'XOF',
+    this.isPrivate = false,
+    this.description,
+    this.teacherName,
+    this.isLive = false,
+    this.memberCount = 0,
   });
 
   factory SchoolClass.fromJson(Map<String, dynamic> json) => SchoolClass(
@@ -45,6 +61,14 @@ class SchoolClass {
         subject: json['subject'],
         teacherId: json['teacher_id'],
         inviteCode: json['invite_code'],
+        isPaid: json['is_paid'] ?? false,
+        price: (json['price'] as num?)?.toDouble() ?? 0,
+        currency: json['currency'] ?? 'XOF',
+        isPrivate: json['is_private'] ?? false,
+        description: json['description'],
+        teacherName: json['teacher_name'],
+        isLive: json['is_live'] ?? false,
+        memberCount: json['member_count'] ?? 0,
       );
 }
 
@@ -52,7 +76,7 @@ class CourseSession {
   final String id;
   final String classId;
   final String title;
-  final String status; // scheduled | live | ended
+  final String status;
 
   CourseSession({
     required this.id,
@@ -67,6 +91,14 @@ class CourseSession {
         title: json['title'],
         status: json['status'],
       );
+}
+
+class ChatMessage {
+  final String senderId;
+  final String content;
+  final bool isPrivate;
+
+  ChatMessage({required this.senderId, required this.content, this.isPrivate = false});
 }
 
 /// Élément générique du tableau blanc : trait libre, texte, ou forme géométrique.
@@ -88,7 +120,6 @@ abstract class BoardElement {
   }
 }
 
-/// Un trait dessiné à main levée (une ligne de points reliés).
 class FreehandBoardElement extends BoardElement {
   final List<Map<String, double>> points;
   final int colorValue;
@@ -123,7 +154,6 @@ class FreehandBoardElement extends BoardElement {
       );
 }
 
-/// Un texte (normal ou avec symboles mathématiques) placé sur le tableau.
 class TextBoardElement extends BoardElement {
   final double x;
   final double y;
@@ -163,7 +193,6 @@ class TextBoardElement extends BoardElement {
 
 enum BoardShapeType { line, rectangle, circle, triangle }
 
-/// Une forme géométrique (ligne, rectangle, cercle, triangle) tracée entre deux points.
 class ShapeBoardElement extends BoardElement {
   final BoardShapeType shapeType;
   final double x1, y1, x2, y2;
@@ -209,10 +238,3 @@ class ShapeBoardElement extends BoardElement {
       );
 }
 
-class ChatMessage {
-  final String senderId;
-  final String content;
-  final bool isPrivate;
-
-  ChatMessage({required this.senderId, required this.content, this.isPrivate = false});
-}

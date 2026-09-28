@@ -17,8 +17,26 @@ def schedule_session(payload: SessionCreate, teacher: dict = Depends(require_tea
         "status": "scheduled",
     }
     res = supabase.table("course_sessions").insert(data).execute()
-    # TODO: notifier tous les élèves de la classe (table notifications)
-    return res.data[0]
+    session = res.data[0]
+
+    if payload.scheduled_at:
+        reminders = supabase.table("class_reminders").select("user_id").eq(
+            "class_id", payload.class_id
+        ).execute()
+        if reminders.data:
+            cls = supabase.table("classes").select("name").eq("id", payload.class_id).execute()
+            class_name = cls.data[0]["name"] if cls.data else "Un cours"
+            notif_rows = [
+                {
+                    "user_id": r["user_id"],
+                    "title": "Cours programmé",
+                    "body": f"{class_name} est programmé pour le {payload.scheduled_at.strftime('%d/%m/%Y à %H:%M')}.",
+                }
+                for r in reminders.data
+            ]
+            supabase.table("notifications").insert(notif_rows).execute()
+
+    return session
 
 
 @router.post("/{session_id}/start")
@@ -28,7 +46,25 @@ def start_session(session_id: str, teacher: dict = Depends(require_teacher)):
     ).eq("id", session_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Session introuvable")
-    return res.data[0]
+
+    session = res.data[0]
+
+    # Notifie tous ceux qui ont "programmé" (mis un rappel sur) cette classe.
+    reminders = supabase.table("class_reminders").select("user_id").eq("class_id", session["class_id"]).execute()
+    if reminders.data:
+        cls = supabase.table("classes").select("name").eq("id", session["class_id"]).execute()
+        class_name = cls.data[0]["name"] if cls.data else "Un cours"
+        notif_rows = [
+            {
+                "user_id": r["user_id"],
+                "title": "Cours en direct !",
+                "body": f"{class_name} vient de démarrer en direct.",
+            }
+            for r in reminders.data
+        ]
+        supabase.table("notifications").insert(notif_rows).execute()
+
+    return session
 
 
 @router.post("/{session_id}/end")
