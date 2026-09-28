@@ -239,6 +239,36 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
                 ],
               ),
             ],
+            if (widget.currentUser.id == info['teacher_id']) ...[
+              const Divider(height: 32),
+              Row(
+                children: const [
+                  Icon(Icons.lock_outline, size: 18, color: Colors.deepPurple),
+                  SizedBox(width: 6),
+                  Text('Messages privés reçus', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_messages.where((m) => m['is_private'] == true).isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Aucun message privé pour le moment', style: TextStyle(color: Colors.grey)),
+                )
+              else
+                ..._messages.where((m) => m['is_private'] == true).map((m) {
+                  final sender = m['users'];
+                  final name = sender != null ? sender['full_name'] : 'Utilisateur';
+                  return Card(
+                    color: Colors.deepPurple[50],
+                    child: ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.lock, size: 16, color: Colors.deepPurple),
+                      title: Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      subtitle: Text(m['content']),
+                    ),
+                  );
+                }),
+            ],
           ],
         ),
       ),

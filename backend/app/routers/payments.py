@@ -114,6 +114,23 @@ async def leekpay_webhook(request: Request):
             }).execute()
         except Exception:
             pass  # déjà membre
+
+        try:
+            cls = supabase.table("classes").select("teacher_id, name").eq(
+                "id", payment_row["class_id"]
+            ).execute()
+            student = supabase.table("users").select("full_name").eq(
+                "id", payment_row["student_id"]
+            ).execute()
+            if cls.data:
+                student_name = student.data[0]["full_name"] if student.data else "Un élève"
+                supabase.table("notifications").insert({
+                    "user_id": cls.data[0]["teacher_id"],
+                    "title": "Paiement reçu !",
+                    "body": f"{student_name} a payé pour rejoindre {cls.data[0]['name']}.",
+                }).execute()
+        except Exception:
+            pass
     else:
         supabase.table("payments").update({"status": "failed"}).eq("id", payment_row["id"]).execute()
 

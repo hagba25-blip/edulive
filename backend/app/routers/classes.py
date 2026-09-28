@@ -43,7 +43,10 @@ def create_class(payload: ClassCreate, teacher: dict = Depends(require_teacher))
     res = supabase.table("classes").insert(data).execute()
 
     if payload.is_paid and payload.payout_phone:
-        supabase.table("users").update({"payout_phone": payload.payout_phone}).eq("id", teacher["id"]).execute()
+        try:
+            supabase.table("users").update({"payout_phone": payload.payout_phone}).eq("id", teacher["id"]).execute()
+        except Exception:
+            pass  # colonne payout_phone pas encore créée: on ignore plutôt que de faire échouer la création
 
     return res.data[0]
 
@@ -166,6 +169,15 @@ def join_class(payload: JoinClass, user: dict = Depends(get_current_user)):
     except Exception:
         raise HTTPException(status_code=400, detail="Vous êtes déjà inscrit à cette classe")
 
+    try:
+        supabase.table("notifications").insert({
+            "user_id": class_data["teacher_id"],
+            "title": "Nouvel inscrit",
+            "body": f"{user['full_name']} a rejoint {class_data['name']}.",
+        }).execute()
+    except Exception:
+        pass
+
     return {"message": "Inscription réussie", "class": class_data}
 
 
@@ -217,9 +229,10 @@ def class_revenue(class_id: str, teacher: dict = Depends(require_teacher)):
 
 @router.post("/{class_id}/messages")
 def post_class_message(class_id: str, payload: ClassMessageCreate, user: dict = Depends(get_current_user)):
-    cls = supabase.table("classes").select("id").eq("id", class_id).execute()
+    cls = supabase.table("classes").select("id, teacher_id, name").eq("id", class_id).execute()
     if not cls.data:
         raise HTTPException(status_code=404, detail="Classe introuvable")
+    class_row = cls.data[0]
 
     data = {
         "class_id": class_id,
@@ -228,6 +241,16 @@ def post_class_message(class_id: str, payload: ClassMessageCreate, user: dict = 
         "is_private": payload.is_private,
     }
     res = supabase.table("class_messages").insert(data).execute()
+
+    # Notifie le créateur de la classe (sauf s'il s'agit de lui-même qui écrit)
+    if class_row["teacher_id"] != user["id"]:
+        kind = "message privé" if payload.is_private else "message public"
+        supabase.table("notifications").insert({
+            "user_id": class_row["teacher_id"],
+            "title": "Nouveau message",
+            "body": f"{user['full_name']} a laissé un {kind} sur {class_row['name']}.",
+        }).execute()
+
     return res.data[0]
 
 
@@ -271,3 +294,4 @@ def set_reminder(class_id: str, user: dict = Depends(get_current_user)):
 def remove_reminder(class_id: str, user: dict = Depends(get_current_user)):
     supabase.table("class_reminders").delete().eq("class_id", class_id).eq("user_id", user["id"]).execute()
     return {"message": "Rappel annulé"}
+
