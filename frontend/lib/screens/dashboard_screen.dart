@@ -328,7 +328,16 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     ? () async {
                         Navigator.pop(sheetContext);
                         try {
-                          final res = await ApiService.joinClass(c.inviteCode);
+                          try {
+                            await ApiService.joinClass(c.inviteCode);
+                          } catch (joinError) {
+                            final joinMsg = joinError.toString();
+                            // Si l'erreur est juste "déjà inscrit", on continue normalement
+                            // (l'utilisateur fait déjà partie de la classe, rien à bloquer).
+                            if (!joinMsg.contains('déjà inscrit') && !joinMsg.contains('propre classe')) {
+                              rethrow;
+                            }
+                          }
                           final sessions = await ApiService.sessionsForClass(c.id);
                           final live = sessions.cast<Map<String, dynamic>?>().firstWhere(
                                 (s) => s?['status'] == 'live',
@@ -343,7 +352,9 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                               ),
                             );
                           } else {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res['message'] ?? 'Rejoint !')));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Aucun cours en direct pour l'instant.")),
+                            );
                           }
                         } catch (e) {
                           final raw = e.toString().replaceFirst('Exception: ', '');
@@ -411,17 +422,26 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         leading: const CircleAvatar(child: Icon(Icons.book)),
         title: Row(
           children: [
-            Expanded(child: Text(c.name)),
+            Expanded(
+              child: Text(
+                c.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             if (c.isPaid)
-              Chip(
-                label: Text('${c.price.toStringAsFixed(0)} ${c.currency}'),
-                backgroundColor: Colors.green[100],
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Chip(
+                  label: Text('${c.price.toStringAsFixed(0)} ${c.currency}'),
+                  backgroundColor: Colors.green[100],
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
               ),
           ],
         ),
-        subtitle: Text('${c.subject} · Code: ${c.inviteCode}'),
+        subtitle: Text('${c.subject} · Code: ${c.inviteCode}', maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

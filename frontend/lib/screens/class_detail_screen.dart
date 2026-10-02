@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import 'classroom_screen.dart';
 import '../models/models.dart';
@@ -107,7 +109,78 @@ class _ClassDetailScreenState extends State<ClassDetailScreen> {
         messenger.showSnackBar(SnackBar(content: Text(res['message'] ?? 'Classe rejointe !')));
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
+      final raw = e.toString().replaceFirst('Exception: ', '');
+
+      // Si la classe est déjà rejointe, ce n'est pas une vraie erreur: on continue.
+      if (raw.contains('déjà inscrit')) {
+        final liveSessionId = _info!['live_session_id'];
+        if (liveSessionId != null && mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ClassroomScreen(
+                user: widget.currentUser,
+                sessionId: liveSessionId,
+                title: _info!['name'],
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Si la classe est payante, propose le paiement au lieu d'afficher l'erreur brute.
+      Map<String, dynamic>? paymentInfo;
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map && decoded.containsKey('class_id')) {
+          paymentInfo = decoded.cast<String, dynamic>();
+        }
+      } catch (_) {}
+
+      if (paymentInfo != null) {
+        _offerPayment(paymentInfo);
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text(raw)));
+      }
+    }
+  }
+
+  void _offerPayment(Map<String, dynamic> info) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Classe payante — ${info['class_name']}'),
+        content: Text(
+          'Cette classe coûte ${info['price']} ${info['currency']}. '
+          'Tu vas être redirigé vers la page de paiement sécurisée LeekPay. '
+          'Une fois le paiement effectué, reviens ici et retape sur Rejoindre.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _startPayment(info['class_id']);
+            },
+            child: const Text('Payer maintenant'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startPayment(String classId) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final checkout = await ApiService.createCheckout(classId);
+      final url = Uri.parse(checkout['checkout_url']);
+      final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        messenger.showSnackBar(const SnackBar(content: Text("Impossible d'ouvrir la page de paiement.")));
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Erreur paiement: $e')));
     }
   }
 

@@ -20,10 +20,33 @@ class WebRTCPeerConnection {
     this.onRemoteStream,
   });
 
+  // IMPORTANT: un serveur STUN seul ne suffit pas quand les deux participants
+  // sont sur des réseaux mobiles/4G (NAT strict ou symétrique) — il faut un
+  // serveur TURN pour relayer l'audio dans ce cas, sinon la connexion échoue
+  // silencieusement (aucun son dans aucun sens). Ici: serveurs STUN Google +
+  // serveur TURN gratuit (Open Relay Project / Metered.ca) pour les tests.
+  // Pour la production, prévoir un TURN dédié (Twilio, Xirsys, coturn...).
   static const Map<String, dynamic> _config = {
     'iceServers': [
       {'urls': 'stun:stun.l.google.com:19302'},
-    ]
+      {'urls': 'stun:stun1.l.google.com:19302'},
+      {
+        'urls': 'turn:openrelay.metered.ca:80',
+        'username': 'openrelayproject',
+        'credential': 'openrelayproject',
+      },
+      {
+        'urls': 'turn:openrelay.metered.ca:443',
+        'username': 'openrelayproject',
+        'credential': 'openrelayproject',
+      },
+      {
+        'urls': 'turn:openrelay.metered.ca:443?transport=tcp',
+        'username': 'openrelayproject',
+        'credential': 'openrelayproject',
+      },
+    ],
+    'iceCandidatePoolSize': 10,
   };
 
   Future<void> init({bool video = false, MediaStream? localStream}) async {

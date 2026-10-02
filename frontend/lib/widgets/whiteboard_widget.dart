@@ -6,7 +6,7 @@ enum BoardTool { pen, text, shape, eraser }
 
 class WhiteboardWidget extends StatefulWidget {
   final RoomSocketService socket;
-  final bool canDraw; // true pour l'enseignant, ou l'élève autorisé à parler/écrire
+  final bool canDraw;
   const WhiteboardWidget({super.key, required this.socket, this.canDraw = true});
 
   @override
@@ -32,9 +32,9 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
     Colors.orange,
     Colors.purple,
     Colors.brown,
+    Colors.yellow
   ];
 
-  // Symboles rapides pour le "clavier mathématique"
   static const List<String> _mathSymbols = [
     '+', '−', '×', '÷', '=', '≠', '≤', '≥', '±',
     '√', 'π', 'Δ', '∞', '°', '²', '³', '½',
@@ -43,7 +43,6 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
 
   String _newId() => '${DateTime.now().microsecondsSinceEpoch}';
 
-  // ---------- SYNCHRONISATION TEMPS RÉEL ----------
   void receiveSync(List<BoardElement> elements) {
     setState(() {
       _elements.clear();
@@ -63,7 +62,6 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
     setState(() => _elements.clear());
   }
 
-  // ---------- GESTES ----------
   void _onPanStart(DragStartDetails d) {
     if (!widget.canDraw) return;
     switch (_tool) {
@@ -80,7 +78,7 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
         _eraseAt(d.localPosition);
         break;
       case BoardTool.text:
-        break; // le texte se place au "tap", pas au glissement
+        break;
     }
   }
 
@@ -151,7 +149,6 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
     _openTextDialog(d.localPosition);
   }
 
-  // ---------- GOMME (efface l'élément touché, pas tout le tableau) ----------
   void _eraseAt(Offset point) {
     const threshold = 18.0;
     BoardElement? hit;
@@ -207,58 +204,64 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
+          // insetPadding réduit pour laisser plus de place au dialogue quand le clavier est ouvert.
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
           title: const Text('Ajouter du texte'),
           content: SizedBox(
             width: 360,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: textCtrl,
-                  autofocus: true,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    hintText: 'Écris ton texte (clavier normal du téléphone)...',
-                    border: OutlineInputBorder(),
+            // SingleChildScrollView : évite le débordement ("BOTTOM OVERFLOWED")
+            // quand le clavier du téléphone prend de la place à l'écran.
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: textCtrl,
+                    autofocus: true,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      hintText: 'Écris ton texte (clavier normal du téléphone)...',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Symboles mathématiques', style: Theme.of(context).textTheme.labelMedium),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: _mathSymbols
-                      .map((s) => ActionChip(
-                            label: Text(s, style: const TextStyle(fontSize: 15)),
-                            onPressed: () => setDialogState(() => insertSymbol(s)),
-                          ))
-                      .toList(),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Text('Couleur:', style: Theme.of(context).textTheme.labelMedium),
-                    const SizedBox(width: 8),
-                    ..._palette.map((c) => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          child: GestureDetector(
-                            onTap: () => setDialogState(() => dialogColor = c),
-                            child: CircleAvatar(
-                              radius: 12,
-                              backgroundColor: c,
-                              child: dialogColor == c
-                                  ? const Icon(Icons.check, size: 14, color: Colors.white)
-                                  : null,
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Symboles mathématiques', style: Theme.of(context).textTheme.labelMedium),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: _mathSymbols
+                        .map((s) => ActionChip(
+                              label: Text(s, style: const TextStyle(fontSize: 15)),
+                              onPressed: () => setDialogState(() => insertSymbol(s)),
+                            ))
+                        .toList(),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Text('Couleur:', style: Theme.of(context).textTheme.labelMedium),
+                      const SizedBox(width: 8),
+                      ..._palette.map((c) => Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 3),
+                            child: GestureDetector(
+                              onTap: () => setDialogState(() => dialogColor = c),
+                              child: CircleAvatar(
+                                radius: 12,
+                                backgroundColor: c,
+                                child: dialogColor == c
+                                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                                    : null,
+                              ),
                             ),
-                          ),
-                        )),
-                  ],
-                ),
-              ],
+                          )),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [
@@ -290,7 +293,6 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
     );
   }
 
-  // ---------- BARRE D'OUTILS ----------
   Widget _toolButton(BoardTool tool, IconData icon, String tooltip) {
     final selected = _tool == tool;
     return Padding(
@@ -330,7 +332,6 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Column(
               children: [
-                // Ligne 1 : sélection de l'outil
                 Row(
                   children: [
                     _toolButton(BoardTool.pen, Icons.edit, 'Stylo'),
@@ -378,7 +379,6 @@ class WhiteboardWidgetState extends State<WhiteboardWidget> {
                     ),
                   ],
                 ),
-                // Ligne 2 : couleurs + épaisseur
                 Row(
                   children: [
                     for (final c in _palette)
@@ -517,7 +517,6 @@ class _WhiteboardPainter extends CustomPainter {
       }
     }
 
-    // Aperçu en cours de tracé
     if (liveFreehand.isNotEmpty) {
       final paint = Paint()
         ..color = liveColor
