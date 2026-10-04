@@ -20,30 +20,36 @@ class WebRTCPeerConnection {
     this.onRemoteStream,
   });
 
-  // IMPORTANT: un serveur STUN seul ne suffit pas quand les deux participants
-  // sont sur des réseaux mobiles/4G (NAT strict ou symétrique) — il faut un
-  // serveur TURN pour relayer l'audio dans ce cas, sinon la connexion échoue
-  // silencieusement (aucun son dans aucun sens). Ici: serveurs STUN Google +
-  // serveur TURN gratuit (Open Relay Project / Metered.ca) pour les tests.
-  // Pour la production, prévoir un TURN dédié (Twilio, Xirsys, coturn...).
+  // Serveurs STUN/TURN Metered.ca (credential dédié, généré depuis le
+  // dashboard Metered > TURN Server > Credentials). Fonctionne même quand
+  // les deux participants sont sur des réseaux mobiles/4G différents.
+  // ⚠️ Remplace REPLACE_WITH_YOUR_PASSWORD par le mot de passe révélé
+  // dans ton dashboard Metered (bouton "Reveal" à côté de PASSWORD).
+  static const String _turnUsername = '916a4275a8b1144eef56821e';
+  static const String _turnPassword = 'iKu0F+pRsgUEPn9C';
+
   static const Map<String, dynamic> _config = {
     'iceServers': [
-      {'urls': 'stun:stun.l.google.com:19302'},
-      {'urls': 'stun:stun1.l.google.com:19302'},
+      {'urls': 'stun:stun.relay.metered.ca:80'},
       {
-        'urls': 'turn:openrelay.metered.ca:80',
-        'username': 'openrelayproject',
-        'credential': 'openrelayproject',
+        'urls': 'turn:global.relay.metered.ca:80',
+        'username': _turnUsername,
+        'credential': _turnPassword,
       },
       {
-        'urls': 'turn:openrelay.metered.ca:443',
-        'username': 'openrelayproject',
-        'credential': 'openrelayproject',
+        'urls': 'turn:global.relay.metered.ca:80?transport=tcp',
+        'username': _turnUsername,
+        'credential': _turnPassword,
       },
       {
-        'urls': 'turn:openrelay.metered.ca:443?transport=tcp',
-        'username': 'openrelayproject',
-        'credential': 'openrelayproject',
+        'urls': 'turn:global.relay.metered.ca:443',
+        'username': _turnUsername,
+        'credential': _turnPassword,
+      },
+      {
+        'urls': 'turns:global.relay.metered.ca:443?transport=tcp',
+        'username': _turnUsername,
+        'credential': _turnPassword,
       },
     ],
     'iceCandidatePoolSize': 10,
